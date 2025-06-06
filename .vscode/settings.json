@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.dbclient-js": "javascript",
+        "*.css": "tailwindcss",
+        "common.h": "c",
+        "algorithm": "c"
+    }
+}
