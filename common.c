@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <arpa/inet.h>
+#include "common.h"
 
 void logexit(const char *msg)
 {
@@ -11,39 +12,40 @@ void logexit(const char *msg)
     exit(EXIT_FAILURE);
 }
 
-int addrparse(const char *addrstr, const char *portstr,
-              struct sockaddr_storage *storage)
+int client_sockaddr_init(const char *addrstr, const char *portstr, const char *portstr_2,
+              struct sockaddr_storage *storage, struct sockaddr_storage *storage_2)
 {
-    if (addrstr == NULL || portstr == NULL)
+    if (addrstr == NULL || portstr == NULL || portstr_2 == NULL)
     {
         return -1;
     }
 
     uint16_t port = (uint16_t)atoi(portstr); // unsigned short
-    if (port == 0)
+    uint16_t port_2 = (uint16_t)atoi(portstr_2);
+
+    if (port == 0 || port_2 == 0)
     {
         return -1;
     }
+
     port = htons(port); // host to network short
+    port_2 = htons(port_2);
 
     struct in_addr inaddr4; // 32-bit IP address
-    if (inet_pton(AF_INET, addrstr, &inaddr4))
+    struct in_addr inaddr4_2;
+    if (inet_pton(AF_INET, addrstr, &inaddr4) && inet_pton(AF_INET, addrstr, &inaddr4_2))
     {
         struct sockaddr_in *addr4 = (struct sockaddr_in *)storage;
+        struct sockaddr_in *addr4_2 = (struct sockaddr_in *)storage_2;
+
         addr4->sin_family = AF_INET;
         addr4->sin_port = port;
         addr4->sin_addr = inaddr4;
-        return 0;
-    }
 
-    struct in6_addr inaddr6; // 128-bit IPv6 address
-    if (inet_pton(AF_INET6, addrstr, &inaddr6))
-    {
-        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)storage;
-        addr6->sin6_family = AF_INET6;
-        addr6->sin6_port = port;
-        // addr6->sin6_addr = inaddr6
-        memcpy(&(addr6->sin6_addr), &inaddr6, sizeof(inaddr6));
+        addr4_2->sin_family = AF_INET;
+        addr4_2->sin_port = port_2;
+        addr4_2->sin_addr = inaddr4_2;
+
         return 0;
     }
 
@@ -96,40 +98,76 @@ int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char
         return -1;
     }
 
+    uint16_t p2p_port = (uint16_t)atoi(portp2pstr);  // unsigned short
     uint16_t clients_port = (uint16_t)atoi(portstr); // unsigned short
-    if (clients_port == 0)
+
+    if (clients_port == 0 || p2p_port == 0)
     {
         return -1;
     }
+
+    p2p_port = htons(p2p_port);         // host to network short
     clients_port = htons(clients_port); // host to network short
 
-    uint16_t p2p_port = (uint16_t)atoi(portp2pstr); // unsigned short
-    if (p2p_port == 0)
-    {
-        return -1;
-    }
-    p2p_port = htons(p2p_port); // host to network short
-
-    struct in_addr inaddr4; // 32-bit IP address
-    if (inet_pton(AF_INET, addrstr, &inaddr4))
-    {
-        struct sockaddr_in *addr4 = (struct sockaddr_in *)p2p_storage;
-        addr4->sin_family = AF_INET;
-        addr4->sin_port = p2p_port;
-        addr4->sin_addr = inaddr4;
-        return 0;
-    }
-
+    struct in_addr inaddr4;        // 32-bit IP address
     struct in_addr inaddr4_client; // 32-bit IP address
-    // memset(inaddr4, 0, sizeof(inaddr4));
-    if (inet_pton(AF_INET, addrstr, &inaddr4_client))
+    if (inet_pton(AF_INET, addrstr, &inaddr4) && inet_pton(AF_INET, addrstr, &inaddr4_client))
     {
-        struct sockaddr_in *addr4 = (struct sockaddr_in *)clients_storage;
-        addr4->sin_family = AF_INET;
-        addr4->sin_port = clients_port;
-        addr4->sin_addr = inaddr4_client;
+        struct sockaddr_in *p2p_addr4 = (struct sockaddr_in *)p2p_storage;
+        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)clients_storage;
+
+        p2p_addr4->sin_family = AF_INET;
+        p2p_addr4->sin_port = p2p_port;
+        p2p_addr4->sin_addr = inaddr4;
+
+        client_addr4->sin_family = AF_INET;
+        client_addr4->sin_port = clients_port;
+        client_addr4->sin_addr = inaddr4_client;
         return 0;
     }
 
     return -1;
+}
+
+// Função utilitária para enviar PeerMsg
+int send_msg(int sock, PeerMsg_t *msg)
+{
+    return send(sock, msg, sizeof(PeerMsg_t), 0);
+}
+// Função utilitária para receber PeerMsg
+int recv_msg(int sock, PeerMsg_t *msg)
+{
+    return recv(sock, msg, sizeof(PeerMsg_t), 0);
+}
+
+int gerar_id_cliente()
+{
+    static int ids[MAX_CLIENTS] = {0}; // 0 means unused
+    static int count = 0;
+
+    if (count >= MAX_CLIENTS)
+    {
+        // All IDs used
+        return -1;
+    }
+
+    int id;
+    int unique = 0;
+
+    while (!unique)
+    {
+        id = rand() % MAX_CLIENTS + 1; // id in [1, MAX_CLIENTS]
+        unique = 1;
+        for (int i = 0; i < count; i++)
+        {
+            if (ids[i] == id)
+            {
+                unique = 0;
+                break;
+            }
+        }
+    }
+
+    ids[count++] = id;
+    return id;
 }

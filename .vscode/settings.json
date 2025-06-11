@@ -3,6 +3,7 @@
         "*.dbclient-js": "javascript",
         "*.css": "tailwindcss",
         "common.h": "c",
-        "algorithm": "c"
+        "algorithm": "c",
+        "stdlib.h": "c"
     }
 }
