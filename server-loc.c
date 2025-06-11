@@ -83,8 +83,9 @@ int init_clients_socket(struct sockaddr_storage *clients_storage)
     return s;
 }
 
-int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, int connected_peer_id, int *client_sockets_ids, int *next_client_index, Server_Type type)
+int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, int *connected_peer_id, int *client_sockets_ids, int *next_client_index, Server_Type type)
 {
+    printf("Entrou\n");
     FD_ZERO(read_fds);
     FD_SET(server_socket, read_fds);
     FD_SET(clients_socket, read_fds);
@@ -120,7 +121,7 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
             {
                 PeerMsg_t disc = {0};
                 disc.type = REQ_DISCPEER;
-                disc.payload = connected_peer_id;
+                disc.payload = *connected_peer_id;
                 send_msg(server_socket, &disc);
                 recv_msg(server_socket, &disc);
                 if (disc.type == OK_MSG)
@@ -134,7 +135,7 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
                     logexit(disc.desc);
                 }
 
-                return 1;
+                return 0;
             }
         }
     }
@@ -150,7 +151,7 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
 
         if (disc.type == REQ_DISCPEER)
         {
-            if (disc.payload != connected_peer_id)
+            if (disc.payload != *connected_peer_id)
             {
                 PeerMsg_t err = {0};
                 err.type = ERROR_MSG;
@@ -161,13 +162,14 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
             // Remove peer
             PeerMsg_t ok = {0};
             ok.type = OK_MSG;
-            ok.payload = connected_peer_id;
+            ok.payload = *connected_peer_id;
             strcpy(ok.desc, "OK(01): Peer desconectado");
             send_msg(server_socket, &ok);
-            printf("Peer %d disconnected\n", connected_peer_id);
-            connected_peer_id = -1;
+            printf("Peer %d disconnected\n", *connected_peer_id);
+            *connected_peer_id = -1;
             return 1;
         }
+        printf("saiu aqui\n");
         return 0; // TODO
     }
 
@@ -183,40 +185,38 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
         {
             logexit("accept client");
         }
-        if (*next_client_index > MAX_CLIENTS - 1)
-        {
-            msg.type = ERROR_MSG;
-            msg.payload = CLIENT_LIMIT_ERROR;
-            strcpy(msg.desc, "Clients limit exceeded");
-            send_peer_msg(csock, &msg);
-            printf("Azedou\n");
-            close(csock);
-            return 0;
-        }
 
-        msg.type = ERROR_MSG;
-        msg.payload = CLIENT_LIMIT_ERROR;
-        strcpy(msg.desc, "Clients limit exceeded");
-        send_peer_msg(csock, &msg);
-
-        PeerMsg_t msg = {0};
         recv_msg(csock, &msg);
 
         if (msg.type == REQ_CONNSEN)
         {
+            if (*next_client_index > MAX_CLIENTS - 1)
+            {
+                PeerMsg_t err = {0};
+                err.type = ERROR_MSG;
+                err.payload = CLIENT_LIMIT_ERROR;
+                strcpy(err.desc, "Clients limit exceeded");
+                send_msg(csock, &err);
+                printf("Azedou\n");
+                close(csock);
+                return 1;
+            }
+
             if (type == LOC)
             {
                 int loc = gerar_loc_cliente();
                 printf("Client %d added (Loc %d)\n", msg.payload, loc);
             }
+
             else
             {
                 int status = gerar_status_cliente();
                 printf("Client %d added (%d)\n", msg.payload, status);
             }
+
+            printf("Ok %d\n", *next_client_index);
             client_sockets_ids[*next_client_index] = msg.payload;
             *next_client_index = *next_client_index + 1;
-            printf("Ok %d\n", *next_client_index);
 
             PeerMsg_t resp = {0};
 
@@ -226,8 +226,60 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
 
             return 1;
         }
+
+        // msg.type = ERROR_MSG;
+        // msg.payload = CLIENT_LIMIT_ERROR;
+        // strcpy(msg.desc, "Clients limit exceeded");
+        // send_peer_msg(csock, &msg);
     }
 
+    for (int i = 0; i < *next_client_index; i++)
+    {
+        int current_socket = client_sockets_ids[i];
+        if (FD_ISSET(current_socket, read_fds))
+        {
+            PeerMsg_t disc = {0};
+            if (recv_msg(current_socket, &disc) == -1)
+            {
+                logexit(disc.desc);
+                return 0;
+            }
+
+            if (disc.type == REQ_DISCSEN)
+            {
+                for (int j = 0; j < *next_client_index; j++)
+                {
+                    if (disc.payload == client_sockets_ids[j])
+                    {
+                        client_sockets_ids[j] = 0;
+                        printf("Client %d disconnected\n", disc.payload);
+                        for (int k = j; k < *next_client_index - 1; k++)
+                        {
+                            client_sockets_ids[k] = client_sockets_ids[k + 1];
+                        }
+                        (*next_client_index)--;
+                        PeerMsg_t ok = {0};
+                        ok.type = OK_MSG;
+                        ok.payload = 1;
+                        sprintf(ok.desc, "%s Successful disconnect", type == LOC ? "SL" : "SS");
+                        send_msg(current_socket, &ok);
+                        printf("Client %d removed\n", disc.payload);
+                        return 1;
+                    }
+                }
+
+                PeerMsg_t err = {0};
+                err.type = ERROR_MSG;
+                err.payload = 10;
+                strcpy(err.desc, "ERROR(10): Cliente nao existe");
+                send_msg(current_socket, &err);
+                return 1;
+            }
+
+            printf("saiu aqui\n");
+            return 0; // TODO
+        }
+    }
     return 1;
 }
 
@@ -309,7 +361,7 @@ int main(int argc, char **argv)
         int next_client_index = 0;
         while (keep_loop)
         {
-            keep_loop = wait_for_activity(&read_fds, s, csock, connected_peer_id, client_sockets, &next_client_index, my_type);
+            keep_loop = wait_for_activity(&read_fds, s, csock, &connected_peer_id, client_sockets, &next_client_index, my_type);
         }
 
         // Loop de comandos
@@ -400,7 +452,7 @@ int main(int argc, char **argv)
             int next_client_index = 0;
             while (keep_loop)
             {
-                keep_loop = wait_for_activity(&read_fds, s_sock, csock, connected_peer_id, client_sockets, &next_client_index, my_type);
+                keep_loop = wait_for_activity(&read_fds, s_sock, csock, &connected_peer_id, client_sockets, &next_client_index, my_type);
             }
 
             // Aguarda REQ_DISCPEER
@@ -434,7 +486,7 @@ int main(int argc, char **argv)
             //     }
             // }
             close(s_sock);
-            printf("No peer found, starting to listen...\n");
+            printf("No peer found, starting to listen... 2\n");
         }
     }
 

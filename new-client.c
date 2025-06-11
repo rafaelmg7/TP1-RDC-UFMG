@@ -70,11 +70,35 @@ int main(int argc, char **argv)
     // }
 
     PeerMsg_t msg = {0};
-    int id_cliente = gerar_id_cliente();
+    // int id_cliente = gerar_id_cliente();
+    memset(buf, 0, BUFSZ);
+    printf("id> ");
+    fgets(buf, BUFSZ - 1, stdin);
+    int id_cliente = atoi(buf);
+    if (id_cliente <= 0)
+    {
+        logexit("Invalid client ID");
+    }
     msg.type = REQ_CONNSEN;
     msg.payload = id_cliente;
     send_msg(s, &msg);
     send_msg(s_2, &msg);
+
+    memset(&msg, 0, sizeof(msg));
+
+    recv_msg(s, &msg);
+    if (msg.type == RES_CONNSEN)
+    {
+        printf("SS New ID: %d\n", msg.payload);
+        printf("SL New ID: %d\n", id_cliente);
+        printf("Ok(02)\n");
+    }
+    else if (msg.type == ERROR_MSG)
+    {
+        printf("%s\n", msg.desc);
+        close(s);
+        logexit(msg.desc);
+    }
 
     // memset(buf, 0, BUFSZ);
     unsigned total = 0;
@@ -86,21 +110,29 @@ int main(int argc, char **argv)
             if (strncmp(buf, "kill", 4) == 0)
             {
                 PeerMsg_t disc = {0};
+                PeerMsg_t disc2 = {0};
                 disc.type = REQ_DISCPEER;
                 disc.payload = id_cliente;
                 send_msg(s, &disc);
                 send_msg(s_2, &disc);
-                // recv_msg(server_socket, &disc);
-                // if (disc.type == OK_MSG)
-                // {
-                //     printf("%s\n", disc.desc);
-                //     printf("Peer %d disconnected\n", disc.payload);
-                // }
-                // else if (disc.type == ERROR_MSG)
-                // {
-                //     printf("%s\n", disc.desc);
-                //     logexit(disc.desc);
-                // }
+
+                memset(&disc, 0, sizeof(disc));
+                memset(&disc2, 0, sizeof(disc2));
+                recv_msg(s, &disc);
+                recv_msg(s_2, &disc2);
+                if (disc.type == OK_MSG && disc2.type == OK_MSG)
+                {
+                    printf("%s\n", disc.desc);
+                }
+                else if (disc.type == ERROR_MSG || disc2.type == ERROR_MSG)
+                {
+                    printf("%s\n", disc.desc);
+                    logexit(disc.desc);
+                }
+                else
+                {
+                    logexit("Unknown error occurred during disconnect.");
+                }
 
                 // return 1;
                 break;

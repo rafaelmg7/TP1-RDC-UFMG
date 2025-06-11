@@ -25,6 +25,7 @@ typedef struct PeerMsg_t
 #define REQ_DISCPEER 22
 #define REQ_CONNSEN 23
 #define RES_CONNSEN 24
+#define REQ_DISCSEN 25
 
 #define ERROR_MSG 255
 #define OK_MSG 0
