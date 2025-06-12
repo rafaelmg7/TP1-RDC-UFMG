@@ -37,10 +37,18 @@ void usage(int argc, char **argv)
 // }
 
 // Gera um ID lógico simples (poderia ser incrementado ou randomizado)
-int gerar_id_peer()
+int gerar_id_peer(int other_id)
 {
     static int id = 100;
-    return id++;
+    if (id != other_id)
+    {
+        return id++;
+    }
+
+    // while(id == other_id){
+    //     id++;
+    // }
+    return ++id;
 }
 
 int gerar_loc_cliente()
@@ -53,6 +61,107 @@ int gerar_status_cliente()
 {
     int random = rand() % 2;
     return random;
+}
+
+// Function to initialize passive server (bind/listen) and set LOC type
+void init_passive_server(int s, struct sockaddr *p2p_addr, struct sockaddr_storage p2p_storage)
+{
+    // struct sockaddr *p2p_addr = (struct sockaddr *)(p2p_storage);
+
+    // *my_type = LOC;
+    if (0 != bind(s, p2p_addr, sizeof(p2p_storage)))
+    {
+        logexit("bind");
+    }
+    if (0 != listen(s, 10))
+    {
+        logexit("listen");
+    }
+}
+
+// Function to accept peer connection and handle handshake
+int handle_peer_accept(int s, int *connected_peer_id, int *server_sock)
+{
+    printf("No peer found, starting to listen...\n");
+    int my_peer_id = 0;
+    struct sockaddr_storage s_storage;
+    struct sockaddr *s_addr = (struct sockaddr *)(&s_storage);
+    socklen_t s_addrlen = sizeof(s_storage);
+    int s_sock = accept(s, s_addr, &s_addrlen);
+    if (s_sock == -1)
+    {
+        logexit("accept");
+    }
+
+    PeerMsg_t msg = {0};
+    recv_msg(s_sock, &msg);
+    if (msg.type == REQ_CONPEER)
+    {
+        if (*connected_peer_id != -1)
+        {
+            PeerMsg_t err = {0};
+            err.type = ERROR_MSG;
+            err.payload = PEER_LIMIT_ERROR;
+            strcpy(err.desc, "Peer limit exceeded");
+            send_msg(s_sock, &err);
+            close(s_sock);
+            return 0;
+        }
+
+        *connected_peer_id = gerar_id_peer(0);
+        PeerMsg_t resp = {0};
+        resp.type = RES_CONPEER;
+        resp.payload = *connected_peer_id;
+        send_msg(s_sock, &resp);
+        printf("Peer %d connected\n", *connected_peer_id);
+
+        PeerMsg_t peer_id_msg = {0};
+        recv_msg(s_sock, &peer_id_msg);
+        if (peer_id_msg.type == RES_CONPEER)
+        {
+            my_peer_id = peer_id_msg.payload;
+            printf("New Peer ID: %d\n", my_peer_id);
+        }
+    }
+
+    *server_sock = s_sock;
+    return my_peer_id;
+}
+
+int start_active_socket(int s, int *connected_peer_id)
+{
+    int my_peer_id;
+
+    PeerMsg_t msg = {0};
+    msg.type = REQ_CONPEER;
+    send_msg(s, &msg);
+    // Recebe resposta
+    recv_msg(s, &msg);
+    if (msg.type == 0 || msg.type == REQ_CONNSEN)
+    {
+        // Compatibilidade: se o outro lado não implementou, aborta
+        printf("Protocolo incompatível\n");
+        close(s);
+        logexit("not implemented");
+    }
+    if (msg.type == RES_CONPEER)
+    {
+        printf("New Peer ID: %d\n", msg.payload);
+        my_peer_id = msg.payload;
+        // Define ID do outro
+        *connected_peer_id = gerar_id_peer(my_peer_id);
+        PeerMsg_t resp = {0};
+        resp.type = RES_CONPEER;
+        resp.payload = *connected_peer_id;
+        send_msg(s, &resp);
+        printf("Peer %d connected\n", *connected_peer_id);
+    }
+    else if (msg.type == ERROR_MSG)
+    {
+        printf("%s\n", msg.desc);
+        close(s);
+        logexit(msg.desc);
+    }
 }
 
 int init_clients_socket(struct sockaddr_storage *clients_storage)
@@ -83,27 +192,27 @@ int init_clients_socket(struct sockaddr_storage *clients_storage)
     return s;
 }
 
-int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, int *connected_peer_id, int *client_sockets_ids, int *next_client_index, Server_Type type)
+int wait_for_activity(fd_set *read_fds, int max_fd, int server_socket, int clients_socket, int my_peer_id, int *connected_peer_id, int *client_sockets_ids, int *next_client_index, Server_Type type)
 {
     printf("Entrou\n");
-    FD_ZERO(read_fds);
-    FD_SET(server_socket, read_fds);
-    FD_SET(clients_socket, read_fds);
-    FD_SET(STDIN_FILENO, read_fds);
-    int max_fd = ((clients_socket > STDIN_FILENO) ? clients_socket : STDIN_FILENO) + 1;
+    // FD_ZERO(read_fds);
+    // FD_SET(server_socket, read_fds);
+    // FD_SET(clients_socket, read_fds);
+    // FD_SET(STDIN_FILENO, read_fds);
+    // int max_fd = ((clients_socket > STDIN_FILENO) ? clients_socket : STDIN_FILENO) + 1;
     char buf[BUFSZ];
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        if (client_sockets_ids[i] > 0)
-        {
-            FD_SET(client_sockets_ids[i], read_fds);
-        }
-        if (client_sockets_ids[i] > max_fd)
-        {
-            max_fd = client_sockets_ids[i];
-        }
-    }
+    // for (int i = 0; i < MAX_CLIENTS; i++)
+    // {
+    //     if (client_sockets_ids[i] > 0)
+    //     {
+    //         FD_SET(client_sockets_ids[i], read_fds);
+    //     }
+    //     if (client_sockets_ids[i] > max_fd)
+    //     {
+    //         max_fd = client_sockets_ids[i];
+    //     }
+    // }
 
     int rv = select(max_fd, read_fds, NULL, NULL, NULL);
 
@@ -121,7 +230,7 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
             {
                 PeerMsg_t disc = {0};
                 disc.type = REQ_DISCPEER;
-                disc.payload = *connected_peer_id;
+                disc.payload = my_peer_id;
                 send_msg(server_socket, &disc);
                 recv_msg(server_socket, &disc);
                 if (disc.type == OK_MSG)
@@ -135,7 +244,8 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
                     logexit(disc.desc);
                 }
 
-                return 0;
+                close(server_socket);
+                exit(EXIT_SUCCESS);
             }
         }
     }
@@ -143,7 +253,9 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
     if (FD_ISSET(server_socket, read_fds))
     {
         PeerMsg_t disc = {0};
-        if (recv_msg(server_socket, &disc) == -1)
+        int a = recv_msg(server_socket, &disc);
+        printf("%d %d %d %s\n", a, disc.type, disc.payload, disc.desc);
+        if (a == -1)
         {
             logexit(disc.desc);
             return 0;
@@ -151,6 +263,7 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
 
         if (disc.type == REQ_DISCPEER)
         {
+            printf("connected peer id: %d\n", *connected_peer_id);
             if (disc.payload != *connected_peer_id)
             {
                 PeerMsg_t err = {0};
@@ -215,8 +328,11 @@ int wait_for_activity(fd_set *read_fds, int server_socket, int clients_socket, i
             }
 
             printf("Ok %d\n", *next_client_index);
-            client_sockets_ids[*next_client_index] = msg.payload;
+            // client_sockets_ids[*next_client_index] = msg.payload;
+            client_sockets_ids[*next_client_index] = csock;
             *next_client_index = *next_client_index + 1;
+
+            FD_SET(csock, read_fds);
 
             PeerMsg_t resp = {0};
 
@@ -295,7 +411,8 @@ int main(int argc, char **argv)
     struct sockaddr_storage clients_storage;
     struct sockaddr_storage p2p_storage;
     Server_Type my_type;
-    int connected_peer_id = -1;
+    int connected_peer_id = -1, my_peer_id = -1;
+    int csock = -1;
     int client_sockets[MAX_CLIENTS] = {0};
 
     fd_set read_fds;
@@ -319,6 +436,34 @@ int main(int argc, char **argv)
 
     struct sockaddr *p2p_addr = (struct sockaddr *)(&p2p_storage);
 
+    if (connect(s, p2p_addr, sizeof(p2p_storage)) != 0)
+    {
+        my_type = LOC;
+        init_passive_server(s, p2p_addr, p2p_storage);
+        int server_socket = -1;
+
+        csock = init_clients_socket(&clients_storage);
+
+        while (1)
+        {
+            my_peer_id = handle_peer_accept(s, &connected_peer_id, &server_socket);
+
+            FD_ZERO(&read_fds);
+            FD_SET(server_socket, &read_fds);
+            FD_SET(csock, &read_fds);
+            FD_SET(STDIN_FILENO, &read_fds);
+            int max_fd = ((csock > STDIN_FILENO) ? csock : STDIN_FILENO) + 1;
+
+            int keep_loop = 1;
+            int next_client_index = 0;
+            
+            while (keep_loop)
+            {
+                keep_loop = wait_for_activity(&read_fds, max_fd, server_socket, csock, my_peer_id, &connected_peer_id, client_sockets, &next_client_index, my_type);
+            }
+        }
+    }
+
     // Tenta conectar como cliente (STATUS)
     if (0 == connect(s, p2p_addr, sizeof(p2p_storage)))
     {
@@ -339,14 +484,14 @@ int main(int argc, char **argv)
         if (msg.type == RES_CONPEER)
         {
             printf("New Peer ID: %d\n", msg.payload);
-            int peer_id_remoto = msg.payload;
-            // Define seu próprio ID
-            connected_peer_id = gerar_id_peer();
+            my_peer_id = msg.payload;
+            // Define ID do outro
+            connected_peer_id = gerar_id_peer(my_peer_id);
             PeerMsg_t resp = {0};
             resp.type = RES_CONPEER;
             resp.payload = connected_peer_id;
             send_msg(s, &resp);
-            printf("Peer %d connected\n", peer_id_remoto);
+            printf("Peer %d connected\n", connected_peer_id);
         }
         else if (msg.type == ERROR_MSG)
         {
@@ -355,13 +500,16 @@ int main(int argc, char **argv)
             logexit(msg.desc);
         }
 
-        int csock = init_clients_socket(&clients_storage);
+        if (csock == -1)
+        {
+            csock = init_clients_socket(&clients_storage);
+        }
 
         int keep_loop = 1;
         int next_client_index = 0;
         while (keep_loop)
         {
-            keep_loop = wait_for_activity(&read_fds, s, csock, &connected_peer_id, client_sockets, &next_client_index, my_type);
+            keep_loop = wait_for_activity(&read_fds, s, csock, my_peer_id, &connected_peer_id, client_sockets, &next_client_index, my_type);
         }
 
         // Loop de comandos
@@ -395,100 +543,106 @@ int main(int argc, char **argv)
     }
 
     // Não encontrou peer, vira LOC e escuta
-    printf("No peer found, starting to listen...\n");
-    my_type = LOC;
-    // int peers[MAX_PEERS] = {-1};
-    if (0 != bind(s, p2p_addr, sizeof(p2p_storage)))
-    {
-        logexit("bind");
-    }
-    if (0 != listen(s, 10))
-    {
-        logexit("listen");
-    }
-    while (1)
-    {
-        struct sockaddr_storage s_storage;
-        struct sockaddr *s_addr = (struct sockaddr *)(&s_storage);
-        socklen_t s_addrlen = sizeof(s_storage);
-        int s_sock = accept(s, s_addr, &s_addrlen);
-        if (s_sock == -1)
-        {
-            logexit("accept");
-        }
-        PeerMsg_t msg = {0};
-        recv_msg(s_sock, &msg);
-        if (msg.type == REQ_CONPEER)
-        {
-            // Verifica limite de peers
-            if (connected_peer_id != -1)
-            {
-                PeerMsg_t err = {0};
-                err.type = ERROR_MSG;
-                err.payload = PEER_LIMIT_ERROR;
-                strcpy(err.desc, "Peer limit exceeded");
-                send_msg(s_sock, &err);
-                close(s_sock);
-                continue;
-            }
-            // Gera ID para o peer
-            connected_peer_id = gerar_id_peer();
-            PeerMsg_t resp = {0};
-            resp.type = RES_CONPEER;
-            resp.payload = connected_peer_id;
-            send_msg(s_sock, &resp);
-            printf("Peer %d connected\n", connected_peer_id);
-            // Recebe o ID do peer remoto
-            PeerMsg_t peer_id_msg = {0};
-            recv_msg(s_sock, &peer_id_msg);
-            if (peer_id_msg.type == RES_CONPEER)
-            {
-                printf("New Peer ID: %d\n", peer_id_msg.payload);
-            }
+    int server_sock;
+    my_peer_id = start_passive_server(s, p2p_addr, p2p_storage, &my_type, &connected_peer_id, &server_sock);
 
-            int csock = init_clients_socket(&clients_storage);
-
-            int keep_loop = 1;
-            int next_client_index = 0;
-            while (keep_loop)
-            {
-                keep_loop = wait_for_activity(&read_fds, s_sock, csock, &connected_peer_id, client_sockets, &next_client_index, my_type);
-            }
-
-            // Aguarda REQ_DISCPEER
-            // while (1)
-            // {
-            //     PeerMsg_t disc = {0};
-            //     if (recv_peer_msg(s_sock, &disc) == -1)
-            //     {
-            //         logexit(disc.desc);
-            //         break;
-            //     }
-            //     if (disc.type == REQ_DISCPEER)
-            //     {
-            //         if (disc.payload != connected_peer_id)
-            //         {
-            //             PeerMsg_t err = {0};
-            //             err.type = ERROR_MSG;
-            //             strcpy(err.desc, "ERROR(02): Peer ID inválido");
-            //             send_peer_msg(s_sock, &err);
-            //             continue;
-            //         }
-            //         // Remove peer
-            //         PeerMsg_t ok = {0};
-            //         ok.type = OK_MSG;
-            //         ok.payload = connected_peer_id;
-            //         strcpy(ok.desc, "OK(01): Peer desconectado");
-            //         send_peer_msg(s_sock, &ok);
-            //         printf("Peer %d disconnected\n", connected_peer_id);
-            //         connected_peer_id = -1;
-            //         break;
-            //     }
-            // }
-            close(s_sock);
-            printf("No peer found, starting to listen... 2\n");
-        }
+    if (csock == -1)
+    {
+        csock = init_clients_socket(&clients_storage);
     }
+
+    int keep_loop = 1;
+    int next_client_index = 0;
+    while (keep_loop)
+    {
+        keep_loop = wait_for_activity(&read_fds, server_sock, csock, my_peer_id, &connected_peer_id, client_sockets, &next_client_index, my_type);
+    }
+    // printf("No peer found, starting to listen...\n");
+    // my_type = LOC;
+    // // int peers[MAX_PEERS] = {-1};
+    // if (0 != bind(s, p2p_addr, sizeof(p2p_storage)))
+    // {
+    //     logexit("bind");
+    // }
+    // if (0 != listen(s, 10))
+    // {
+    //     logexit("listen");
+    // }
+
+    // while (1)
+    // {
+    //     struct sockaddr_storage s_storage;
+    //     struct sockaddr *s_addr = (struct sockaddr *)(&s_storage);
+    //     socklen_t s_addrlen = sizeof(s_storage);
+    //     int s_sock = accept(s, s_addr, &s_addrlen);
+    //     if (s_sock == -1)
+    //     {
+    //         logexit("accept");
+    //     }
+    //     PeerMsg_t msg = {0};
+    //     recv_msg(s_sock, &msg);
+    //     if (msg.type == REQ_CONPEER)
+    //     {
+    //         if (connected_peer_id != -1)
+    //         {
+    //             PeerMsg_t err = {0};
+    //             err.type = ERROR_MSG;
+    //             err.payload = PEER_LIMIT_ERROR;
+    //             strcpy(err.desc, "Peer limit exceeded");
+    //             send_msg(s_sock, &err);
+    //             close(s_sock);
+    //             continue;
+    //         }
+
+    //         connected_peer_id = gerar_id_peer(0);
+    //         PeerMsg_t resp = {0};
+    //         resp.type = RES_CONPEER;
+    //         resp.payload = connected_peer_id;
+    //         send_msg(s_sock, &resp);
+    //         printf("Peer %d connected\n", connected_peer_id);
+
+    //         PeerMsg_t peer_id_msg = {0};
+    //         recv_msg(s_sock, &peer_id_msg);
+    //         if (peer_id_msg.type == RES_CONPEER)
+    //         {
+    //             my_peer_id = peer_id_msg.payload;
+    //             printf("New Peer ID: %d\n", my_peer_id);
+    //         }
+
+    //         // Aguarda REQ_DISCPEER
+    //         // while (1)
+    //         // {
+    //         //     PeerMsg_t disc = {0};
+    //         //     if (recv_peer_msg(s_sock, &disc) == -1)
+    //         //     {
+    //         //         logexit(disc.desc);
+    //         //         break;
+    //         //     }
+    //         //     if (disc.type == REQ_DISCPEER)
+    //         //     {
+    //         //         if (disc.payload != connected_peer_id)
+    //         //         {
+    //         //             PeerMsg_t err = {0};
+    //         //             err.type = ERROR_MSG;
+    //         //             strcpy(err.desc, "ERROR(02): Peer ID inválido");
+    //         //             send_peer_msg(s_sock, &err);
+    //         //             continue;
+    //         //         }
+    //         //         // Remove peer
+    //         //         PeerMsg_t ok = {0};
+    //         //         ok.type = OK_MSG;
+    //         //         ok.payload = connected_peer_id;
+    //         //         strcpy(ok.desc, "OK(01): Peer desconectado");
+    //         //         send_peer_msg(s_sock, &ok);
+    //         //         printf("Peer %d disconnected\n", connected_peer_id);
+    //         //         connected_peer_id = -1;
+    //         //         break;
+    //         //     }
+    //         // }
+    //         close(s_sock);
+    //         printf("No peer found, starting to listen... 2\n");
+    //     }
+    // }
 
     return 0;
 }
