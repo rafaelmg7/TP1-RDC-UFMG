@@ -1,1 +1,0 @@
-- se conexão de algum dos servidores for encerrada, fechar conexão com clientes

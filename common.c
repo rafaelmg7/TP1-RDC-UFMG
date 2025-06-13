@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <arpa/inet.h>
 #include "common.h"
@@ -91,7 +92,7 @@ void addrtostr(const struct sockaddr *addr, char *str, size_t strsize)
 }
 
 int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char *portstr,
-                         struct sockaddr_storage *p2p_storage, struct sockaddr_storage *clients_storage)
+                         struct sockaddr_storage *server_storage, struct sockaddr_storage *clients_storage)
 {
     if (addrstr == NULL || portp2pstr == NULL || portstr == NULL)
     {
@@ -113,7 +114,7 @@ int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char
     struct in_addr inaddr4_client; // 32-bit IP address
     if (inet_pton(AF_INET, addrstr, &inaddr4) && inet_pton(AF_INET, addrstr, &inaddr4_client))
     {
-        struct sockaddr_in *p2p_addr4 = (struct sockaddr_in *)p2p_storage;
+        struct sockaddr_in *p2p_addr4 = (struct sockaddr_in *)server_storage;
         struct sockaddr_in *client_addr4 = (struct sockaddr_in *)clients_storage;
 
         p2p_addr4->sin_family = AF_INET;
@@ -170,4 +171,12 @@ int gerar_id_cliente()
 
     ids[count++] = id;
     return id;
+}
+
+void toLowerString(char *str)
+{
+    for (char *p = str; *p; p++)
+    {
+        *p = tolower(*p);
+    }
 }
