@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 
+#define BUFSZ 501
+
 typedef enum
 {
     LOC,
@@ -15,12 +17,12 @@ typedef enum {
     TERMINATE_P2P_CONNECTION,
 } ServerCommand;
 
-typedef struct PeerMsg
+typedef struct Msg
 {
-    int type;       // Tipo da mensagem
-    int payload;    // Payload da mensagem (peer ID, código do erro, etc.)
-    char desc[256]; // Descrição da mensagem (erro, OK, etc)
-} PeerMsg_t;
+    int type;
+    int payload;
+    char desc[BUFSZ];
+} Msg_t;
 
 typedef struct Client{
     int id;
@@ -29,9 +31,8 @@ typedef struct Client{
 } Client_t;
 
 #define MAX_PEERS 2
-#define MAX_CLIENTS 4
+#define MAX_CLIENTS 15
 
-// Message codes
 #define REQ_CONPEER      20
 #define RES_CONPEER      21
 #define REQ_DISCPEER     22
@@ -53,37 +54,26 @@ typedef struct Client{
 #define PEER_LIMIT_ERROR 1
 #define CLIENT_LIMIT_ERROR 9
 
-// Message descriptions
-#define DESC_REQ_CONPEER      "Requisição de conexão entre peers"
-#define DESC_RES_CONPEER      "Resposta de conexão entre peers"
-#define DESC_REQ_DISCPEER     "Requisição de desconexão entre peers"
-#define DESC_REQ_CONNSEN      "Requisição de conexão de sensor"
-#define DESC_RES_CONNSEN      "Resposta de conexão de sensor"
-#define DESC_REQ_DISCSEN      "Requisição de desconexão de sensor"
+#define DESC_ERROR_01 "Peer limit exceeded"
+#define DESC_ERROR_02 "Peer not found"
+#define DESC_ERROR_09 "Sensor limit exceeded"
+#define DESC_ERROR_10 "Sensor not found"
+#define DESC_ERROR_11 "Location not found"
 
-#define DESC_REQ_CHECKALERT   "Requisição de alerta de status positivo de pane na rede (SensID)"
-#define DESC_RES_CHECKALERT   "Resposta de alerta de status positivo de pane na rede (LocID)"
-#define DESC_REQ_SENSLOC      "Requisição de informação sobre a localização de um sensor (SensID)"
-#define DESC_RES_SENSLOC      "Resposta de informação sobre a localização de um sensor (LocID)"
-#define DESC_REQ_SENSSTATUS   "Requisição de status de sensor (SensID)"
-#define DESC_RES_SENSSTATUS   "Resposta de status de sensor (StatusID)"
-#define DESC_REQ_LOCLIST      "Requisição de sensores presentes em uma localização (LocId)"
-#define DESC_RES_LOCLIST      "Resposta de sensores presentes em uma localização (SenIDs)"
+#define DESC_OK_01 "Successful disconnect"
+#define DESC_OK_02 "Successful create"
+#define DESC_OK_03 "Status do sensor 0"
 
 void logexit(const char *msg);
 
 int client_sockaddr_init(const char *addrstr, const char *portstr, const char *portstr_2,
                          struct sockaddr_storage *storage, struct sockaddr_storage *storage_2);
 
-void addrtostr(const struct sockaddr *addr, char *str, size_t strsize);
-
 int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char *portstr,
                          struct sockaddr_storage *p2p_storage, struct sockaddr_storage *clients_storage);
 
-int send_msg(int sock, PeerMsg_t *msg);
+int send_msg(int sock, Msg_t *msg);
 
-int recv_msg(int sock, PeerMsg_t *msg);
-
-int gerar_id_cliente();
+int recv_msg(int sock, Msg_t *msg);
 
 void toLowerString(char *str);

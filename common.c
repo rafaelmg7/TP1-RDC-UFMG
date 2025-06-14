@@ -7,14 +7,33 @@
 #include <arpa/inet.h>
 #include "common.h"
 
+/**
+ * @brief Exibe uma mensagem de erro e encerra o programa.
+ * * Esta função utilitária imprime a mensagem de erro fornecida, seguida
+ * pela descrição do erro do sistema (usando perror), e então termina
+ * a execução do programa com status de falha.
+ * * @param msg A mensagem de erro a ser exibida.
+ */
 void logexit(const char *msg)
 {
     perror(msg);
     exit(EXIT_FAILURE);
 }
 
+/**
+ * @brief Inicializa duas estruturas de endereço de socket para o cliente.
+ * * Prepara as estruturas `sockaddr_storage` para o cliente se conectar a dois
+ * servidores (ou duas portas no mesmo servidor). Converte as strings de
+ * endereço e porta para o formato binário de rede.
+ * * @param addrstr String contendo o endereço IP do servidor.
+ * @param portstr String contendo a porta do primeiro servidor.
+ * @param portstr_2 String contendo a porta do segundo servidor.
+ * @param storage Ponteiro para a estrutura que armazenará o endereço do primeiro servidor.
+ * @param storage_2 Ponteiro para a estrutura que armazenará o endereço do segundo servidor.
+ * @return int Retorna 0 em caso de sucesso, -1 em caso de falha (ex: argumentos nulos ou portas inválidas).
+ */
 int client_sockaddr_init(const char *addrstr, const char *portstr, const char *portstr_2,
-              struct sockaddr_storage *storage, struct sockaddr_storage *storage_2)
+                         struct sockaddr_storage *storage, struct sockaddr_storage *storage_2)
 {
     if (addrstr == NULL || portstr == NULL || portstr_2 == NULL)
     {
@@ -53,44 +72,17 @@ int client_sockaddr_init(const char *addrstr, const char *portstr, const char *p
     return -1;
 }
 
-void addrtostr(const struct sockaddr *addr, char *str, size_t strsize)
-{
-    int version;
-    char addrstr[INET6_ADDRSTRLEN + 1] = "";
-    uint16_t port;
-
-    if (addr->sa_family == AF_INET)
-    {
-        version = 4;
-        struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
-        if (!inet_ntop(AF_INET, &(addr4->sin_addr), addrstr,
-                       INET6_ADDRSTRLEN + 1))
-        {
-            logexit("ntop");
-        }
-        port = ntohs(addr4->sin_port); // network to host short
-    }
-    else if (addr->sa_family == AF_INET6)
-    {
-        version = 6;
-        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
-        if (!inet_ntop(AF_INET6, &(addr6->sin6_addr), addrstr,
-                       INET6_ADDRSTRLEN + 1))
-        {
-            logexit("ntop");
-        }
-        port = ntohs(addr6->sin6_port); // network to host short
-    }
-    else
-    {
-        logexit("unknown protocol family.");
-    }
-    if (str)
-    {
-        snprintf(str, strsize, "IPv%d %s %hu", version, addrstr, port);
-    }
-}
-
+/**
+ * @brief Inicializa duas estruturas de endereço de socket para o servidor.
+ * * Prepara as estruturas `sockaddr_storage` para o servidor: uma para a
+ * comunicação P2P (peer-to-peer) e outra para a comunicação com os clientes.
+ * * @param addrstr String contendo o endereço IP no qual o servidor irá operar.
+ * @param portp2pstr String contendo a porta para a comunicação P2P.
+ * @param portstr String contendo a porta para a comunicação com clientes.
+ * @param server_storage Ponteiro para a estrutura que armazenará o endereço P2P.
+ * @param clients_storage Ponteiro para a estrutura que armazenará o endereço dos clientes.
+ * @return int Retorna 0 em caso de sucesso, -1 em caso de falha.
+ */
 int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char *portstr,
                          struct sockaddr_storage *server_storage, struct sockaddr_storage *clients_storage)
 {
@@ -130,49 +122,50 @@ int server_sockaddr_init(const char *addrstr, const char *portp2pstr, const char
     return -1;
 }
 
-// Função utilitária para enviar PeerMsg
-int send_msg(int sock, PeerMsg_t *msg)
+/**
+ * @brief Envia uma estrutura Msg_t completa através de um socket.
+ * * Função wrapper para a chamada `send` que garante que todos os bytes
+ * da mensagem foram enviados e trata erros caso contrário.
+ * * @param sock O file descriptor do socket para envio.
+ * @param msg Ponteiro para a mensagem a ser enviada.
+ * @return int O número de bytes enviados.
+ */
+int send_msg(int sock, Msg_t *msg)
 {
-    return send(sock, msg, sizeof(PeerMsg_t), 0);
-}
-// Função utilitária para receber PeerMsg
-int recv_msg(int sock, PeerMsg_t *msg)
-{
-    return recv(sock, msg, sizeof(PeerMsg_t), 0);
-}
-
-int gerar_id_cliente()
-{
-    static int ids[MAX_CLIENTS] = {0}; // 0 means unused
-    static int count = 0;
-
-    if (count >= MAX_CLIENTS)
+    size_t count = send(sock, msg, sizeof(Msg_t), 0);
+    if (count != sizeof(Msg_t))
     {
-        // All IDs used
-        return -1;
+        logexit("send_msg");
     }
 
-    int id;
-    int unique = 0;
-
-    while (!unique)
-    {
-        id = rand() % MAX_CLIENTS + 1; // id in [1, MAX_CLIENTS]
-        unique = 1;
-        for (int i = 0; i < count; i++)
-        {
-            if (ids[i] == id)
-            {
-                unique = 0;
-                break;
-            }
-        }
-    }
-
-    ids[count++] = id;
-    return id;
+    return count;
 }
 
+/**
+ * @brief Recebe uma estrutura Msg_t a partir de um socket.
+ * * Função wrapper para a chamada `recv` que preenche a estrutura `msg`
+ * fornecida com os dados recebidos e trata erros de recepção.
+ * * @param sock O file descriptor do socket para recebimento.
+ * @param msg Ponteiro para a estrutura onde a mensagem será armazenada.
+ * @return int O número de bytes recebidos.
+ */
+int recv_msg(int sock, Msg_t *msg)
+{
+    size_t count = recv(sock, msg, sizeof(Msg_t), 0);
+    if (count < 0)
+    {
+        logexit("recv_msg");
+    }
+
+    return count;
+}
+
+/**
+ * @brief Converte todos os caracteres de uma string para minúsculas.
+ * * Altera a string original, convertendo cada caractere para sua
+ * versão em minúsculo.
+ * * @param str A string a ser convertida.
+ */
 void toLowerString(char *str)
 {
     for (char *p = str; *p; p++)

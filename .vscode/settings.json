@@ -4,6 +4,8 @@
         "*.css": "tailwindcss",
         "common.h": "c",
         "algorithm": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "socket.h": "c",
+        "inttypes.h": "c"
     }
 }
