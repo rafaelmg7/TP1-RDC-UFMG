@@ -69,7 +69,9 @@ int get_client_status()
  */
 void init_passive_server(int s, struct sockaddr *p2p_addr, struct sockaddr_storage p2p_storage)
 {
-    if (0 != bind(s, p2p_addr, sizeof(p2p_storage)))
+    socklen_t addrlen = sizeof(struct sockaddr_in);
+
+    if (0 != bind(s, p2p_addr, addrlen))
     {
         logexit("bind");
     }
@@ -91,9 +93,10 @@ void init_passive_server(int s, struct sockaddr *p2p_addr, struct sockaddr_stora
 int handle_peer_accept(int s, int *connected_peer_id, int *server_sock)
 {
     int my_peer_id = 0;
-    struct sockaddr_storage s_storage;
-    struct sockaddr *s_addr = (struct sockaddr *)(&s_storage);
-    socklen_t s_addrlen = sizeof(s_storage);
+
+    struct sockaddr_in s_in;    
+    struct sockaddr *s_addr = (struct sockaddr *)(&s_in);
+    socklen_t s_addrlen = sizeof(s_in);
     int s_sock = accept(s, s_addr, &s_addrlen);
     if (s_sock == -1)
     {
@@ -196,8 +199,9 @@ int init_clients_socket(struct sockaddr_storage *clients_storage)
     }
 
     struct sockaddr *clients_addr = (struct sockaddr *)(clients_storage);
+    socklen_t addrlen = sizeof(struct sockaddr_in);
 
-    if (0 != bind(s, clients_addr, sizeof(*clients_storage)))
+    if (0 != bind(s, clients_addr, addrlen))
     {
         logexit("bind");
     }
@@ -357,11 +361,11 @@ ServerCommand handle_peer_activity(int server_socket, int *connected_peer_id, Cl
 ServerCommand handle_client_connection(int clients_socket, Client_t *clients,
                                        int *next_client_index, fd_set *read_fds, Server type)
 {
-    struct sockaddr_storage cstorage;
-    socklen_t caddrlen = sizeof(cstorage);
+    struct sockaddr_in c_in;
+    socklen_t caddrlen = sizeof(c_in);
     Msg_t msg = {0};
 
-    int csock = accept(clients_socket, (struct sockaddr *)(&cstorage), &caddrlen);
+    int csock = accept(clients_socket, (struct sockaddr *)(&c_in), &caddrlen);
     if (csock == -1)
     {
         logexit("accept client");
@@ -462,7 +466,7 @@ ServerCommand handle_req_sensstatus(int current_socket, int peer_socket, Client_
     {
         msg.type = OK_MSG;
         msg.payload = 2;
-        strcpy(msg.desc, DESC_OK_02);
+        strcpy(msg.desc, DESC_OK_03);
         send_msg(current_socket, &msg);
         return CONTINUE_RUNNING;
     }
@@ -573,7 +577,7 @@ ServerCommand handle_req_loclist(int current_socket, int loc_id, Client_t *clien
     }
 
     printf("Found sensors at location %d\n", loc_id);
-    printf("Sending RES_LOCLIST %s", loc_clients);
+    printf("Sending RES_LOCLIST %s\n", loc_clients);
 
     Msg_t msg = {0};
     msg.type = RES_LOCLIST;
@@ -832,10 +836,11 @@ int main(int argc, char **argv)
     }
 
     struct sockaddr *p2p_addr = (struct sockaddr *)(&p2p_storage);
+    socklen_t addrlen = sizeof(struct sockaddr_in);
 
     // --- MODO ATIVO (Servidor de Status) ---
     // Tenta se conectar a um servidor peer existente
-    if (connect(s, p2p_addr, sizeof(p2p_storage)) == 0)
+    if (connect(s, p2p_addr, addrlen) == 0)
     {
         // Conexão bem-sucedida, assume o papel de Servidor de Status (SS)
         my_type = STATUS;

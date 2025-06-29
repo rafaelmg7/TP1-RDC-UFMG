@@ -426,12 +426,14 @@ int main(int argc, char **argv)
     // Conecta-se aos dois servidores
     struct sockaddr *addr = (struct sockaddr *)(&storage);
     struct sockaddr *addr_2 = (struct sockaddr *)(&storage_2);
-    if (connect(s, addr, sizeof(storage)) != 0)
+    socklen_t addrlen = sizeof(struct sockaddr_in);
+
+    if (connect(s, addr, addrlen) != 0)
     {
         logexit("connect");
     }
 
-    if (connect(s_2, addr_2, sizeof(storage_2)) != 0)
+    if (connect(s_2, addr_2, addrlen) != 0)
     {
         logexit("connect");
     }
